@@ -12,18 +12,27 @@ import matplotlib.pyplot as plt
 
 stockTicker = "ACCON.ST"
 stockTicker = "PLUG"
-stockTicker = "ERIC-B.ST" # 350 - 1d - 1
-stockTicker = "ETH-USD" # 350 -1h - 12
-stockTicker = "BTC-USD" # 350 -1h - 12
+stockTicker = "ETH-USD" # 350 -1h - 12 - 200 epochs
+stockTicker = "BTC-USD" # 350 -1h - 12 - 200 epochs
+stockTicker = "ERIC-B.ST" # 350 - 1d - 1 - 200 epochs
+stockTicker = "KINV-B.ST"
+stockTicker = "INVE-B.ST"
+stockTicker = "ALIV-SDB.ST"
+stockTicker = "SKF-B.ST"
+stockTicker = "TEL2-B.ST"
+stockTicker = "SWED-A.ST"
 
-NUM_DAYS = 350     # The number of days of historical data to retrieve
-INTERVAL = '1h'     # Sample rate of historical data
+
+NUM_DAYS = 50     # The number of days of historical data to retrieve
+INTERVAL = '15m'     # Sample rate of historical data
 INDICATORS = ['RSI', 'MACD', 'STOCH', 'ADL', 'ATR', 'MOM', 'MFI', 'ROC', 'OBV', 'CCI', 'EMV', 'VORTEX']
 
 window = 12
 nr_cells_lstm = 256
 noOfEpochs = 200
 batchsize = 40
+testSize = 0.3
+confidenseThreshold = 0.8
 
 def get_stock_data(tickerSymbol):
     # List of symbols for technical indicators
@@ -183,34 +192,39 @@ num_columns = df.shape[1] # Needs to be specified in the model
 
 # Add a column for the label
 df['label'] = df['close'].shift(-window) > df['close']
+df['result'] = (df['close'].shift(-window) - df['close'])/df['close'] * 100
+
 print(df)
 # Drop rows with missing values
 df.dropna(inplace=True)
-print(df)
 #df = df.drop(["Stock Splits","Dividends"], axis='columns')
 
 # Scale the data
 print(df.shape)
 scaler = MinMaxScaler()
-df_X = df.drop(["label"], axis='columns')
+df_X = df.drop(["label","result"], axis='columns')
 df_X = (df_X-df_X.min())/(df_X.max()-df_X.min())
 df_X = pd.DataFrame(scaler.fit_transform(df_X),columns=df_X.columns)
 # Reshape the input data for the LSTM
-print(df_X)
-print(df_X.shape)
 #df_X = df_X[['Open','Close', 'Volume', 'High', 'Low']].values
 df_X = df_X.values
 X = np.reshape(df_X, (df_X.shape[0], 1, num_columns))
 #X = np.reshape(df_X[['Close', 'Volume', 'High', 'Low']], (df_X.shape[0], 1, 4))
-y = df['label']
-
+df_reset = df.reset_index()
+print(df_reset)
+y = df_reset[['label','index','result']]
 # Split the data into training and test sets
 #X = df[['Close', 'Volume', 'High', 'Low']]
 #y = df['label']
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=testSize)
 
 # Reshape the input data for the LSTM
-print(X_train.shape)
+y_train = y_train.drop(["index","result"], axis='columns')
+print(y_test)
+y_test_result = y_test
+y_test = y_test.drop(["index","result"], axis='columns')
+print(y_test)
+
 #X_train = np.reshape(X_train, (X_train.shape[0], 1, X_train.shape[1]))
 #X_test = np.reshape(X_test, (X_test.shape[0], 1, X_test.shape[1]))
 
@@ -227,7 +241,7 @@ model.add(LSTM(nr_cells_lstm, return_sequences=True, input_shape=(1, num_columns
 # this allows the information to be passed from one layer to the other and 
 # increase the capacity of the model to store information.
 model.add(LSTM(nr_cells_lstm,return_sequences=True,))
-
+model.add(LSTM(nr_cells_lstm,return_sequences=True,))
 model.add(LSTM(nr_cells_lstm))
 
 # Use sigmoid when binary results
@@ -235,7 +249,6 @@ model.add(Dense(1, activation='sigmoid'))
 
 # Compile the model
 model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-
 # Fit the model to the training data
 history = model.fit(X_train, y_train, epochs=noOfEpochs, batch_size=batchsize, verbose=1)
 
@@ -247,13 +260,14 @@ predictions_class = (predictions > 0.5).astype(int)
 
 nrCorrect = 0
 total = 0
+print(y_test)
 # Interpret the results
 for i in range(len(predictions)):
-    if predictions[i] > 0.7:
-        if predictions_class[i] == 1 and y_test[i] == True or predictions_class[i] == 0 and y_test[i] == 0:
+    if predictions[i] > confidenseThreshold:
+        if predictions_class[i] == 1 and y_test.iloc[i]['label'] == True or predictions_class[i] == 0 and y_test.iloc[i]['label'] == False:
             nrCorrect += 1
         total += 1
-        print("Prediction:", predictions_class[i], "Confidence level:", predictions[i], "Correct Result:", y_test[i])
+        print("Prediction:", predictions_class[i], "Confidence level:", predictions[i], "Correct Result:", round(y_test_result.iloc[i]['result'],4),"%","Date",y_test_result.iloc[i]['index'])
         print("Total: ",total," Correct: ",nrCorrect)
 
 # Evaluate the model on the test data
