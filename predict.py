@@ -1,6 +1,7 @@
 import datetime
 import yfinance as yf
 import pandas as pd
+from finta import TA
 from sklearn.preprocessing import MinMaxScaler
 from joblib import load
 import numpy as np
@@ -10,16 +11,10 @@ from stock_tickers import INDICATORS
 from stock_tickers import stockTickers
 
 # Select ticker
-stockTicker = stockTickers[15]
+stockTicker = stockTickers[16]
 
 NUM_DAYS = 150     # The number of days of historical data to retrieve
 INTERVAL = '1d'     # Sample rate of historical data
-future_peek = 12
-nr_cells_lstm = 256
-noOfEpochs = 300
-batchsize = 40
-testSize = 0.3
-confidenseThreshold = 0.8
 
 def get_stock_data(tickerSymbol):
     # List of symbols for technical indicators
