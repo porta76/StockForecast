@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from stock_tickers import INDICATORS
 from stock_tickers import stockTickers
 
-stockTicker = stockTickers[14]
+stockTicker = stockTickers[16]
 
 NUM_DAYS = 1500     # The number of days of historical data to retrieve
 INTERVAL = '1d'     # Sample rate of historical data
@@ -280,9 +280,10 @@ if 'val_loss' in history.history:
     ax.plot(history.history['val_loss'], label='Validation loss', color='orange')
 
 # Add legend, x and y labels and title
+chartTitle = stockTicker + ' - Model accuracy and loss'
 plt.title(stockTicker)
 ax.legend()
-ax.set_title('Model accuracy and loss')
+ax.set_title(chartTitle)
 ax.set_xlabel('Epoch')
 ax.set_ylabel('Accuracy/Loss')
 
