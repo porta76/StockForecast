@@ -1,25 +1,22 @@
 import datetime
 import yfinance as yf
-from finta import TA
 import pandas as pd
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
-from joblib import dump
-from keras.models import Sequential
-from keras.layers import LSTM, Dense
+from joblib import load
 import numpy as np
 import matplotlib.pyplot as plt
 
 from stock_tickers import INDICATORS
 from stock_tickers import stockTickers
 
-stockTicker = stockTickers[14]
+# Select ticker
+stockTicker = stockTickers[15]
 
-NUM_DAYS = 1500     # The number of days of historical data to retrieve
+NUM_DAYS = 150     # The number of days of historical data to retrieve
 INTERVAL = '1d'     # Sample rate of historical data
 future_peek = 12
 nr_cells_lstm = 256
-noOfEpochs = 250
+noOfEpochs = 300
 batchsize = 40
 testSize = 0.3
 confidenseThreshold = 0.8
@@ -157,28 +154,14 @@ def addHistoryDataForEachSet(data):
 
     return data
 
-def _produce_prediction(data,future_peek):
-    """
-    Function that produces the 'truth' values
-    At a given row, it looks future_peek' rows ahead to see if the price increased (1) or decreased (0)
-    :paramfuture_peek: number of days, or rows to look ahead to see what the price did
-    """
-    # Add a column for the label
-    df['label'] = df['close'].shift(-future_peek) > df['close']
-    df['result'] = (df['close'].shift(-future_peek) - df['close'])/df['close'] * 100
-
-    return data
-
 
 # Download stock data
 df = get_stock_data(stockTicker)
 df = _get_indicator_data(df)
 df = addHistoryDataForEachSet(df)
 num_columns = df.shape[1] # Needs to be specified in the model
-df = _produce_prediction(df,future_peek)
 
 print(df)
-#print(df.iloc[-1].to_string())
 
 # Drop rows with missing values
 df.dropna(inplace=True)
@@ -186,7 +169,7 @@ df.dropna(inplace=True)
 # Scale the data
 print(df.shape)
 scaler = MinMaxScaler()
-df_X = df.drop(["label","result"], axis='columns')
+df_X = df
 df_X = (df_X-df_X.min())/(df_X.max()-df_X.min())
 df_X = pd.DataFrame(scaler.fit_transform(df_X),columns=df_X.columns)
 
@@ -194,100 +177,28 @@ df_X = pd.DataFrame(scaler.fit_transform(df_X),columns=df_X.columns)
 df_X = df_X.values
 X = np.reshape(df_X, (df_X.shape[0], 1, num_columns))
 
-df_reset = df.reset_index()
-print(df_reset)
-y = df_reset[['label','index','result']]
 
-# Split the data into random training and test sets
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=testSize)
-
-# Reshape the input data for the LSTM
-y_train = y_train.drop(["index","result"], axis='columns')
-print(y_test)
-y_test_result = y_test
-y_test = y_test.drop(["index","result"], axis='columns')
-print(y_test)
-
-# Initialize the LSTM model
-model = Sequential()
-
-# In summary, this line of code is adding a layer with 128 
-# LSTM cells to the model, # and it is specifying that the 
-# input data to this layer will have the shape of (number of samples, 1, 5).
-model.add(LSTM(nr_cells_lstm, return_sequences=True, input_shape=(1, num_columns)))
-
-# adding more memory to the LSTM model is to use stacked LSTM layers, 
-# it means to use multiple layers with the return_sequences set to True, 
-# this allows the information to be passed from one layer to the other and 
-# increase the capacity of the model to store information.
-model.add(LSTM(nr_cells_lstm,return_sequences=True,))
-model.add(LSTM(nr_cells_lstm,return_sequences=True,))
-model.add(LSTM(nr_cells_lstm))
-
-# Use sigmoid when binary results
-model.add(Dense(1, activation='sigmoid'))
-
-# Compile the model
-model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
-
-# Fit the model to the training data
-history = model.fit(X_train, y_train, epochs=noOfEpochs, batch_size=batchsize, verbose=1)
-
-# Get the model's predictions on the test data
-# Run the model on the test data
-predictions = model.predict(X_test)
+loaded_model = load("last_model_trained.joblib")
+predictions = loaded_model.predict(X)
 predictions_class = (predictions > 0.5).astype(int)
 
-nrCorrect = 0
-total = 0
-confidence_result_list = []
-print(y_test)
-# Interpret the results
-for i in range(len(predictions)):
-    if predictions[i] > confidenseThreshold:
-        if predictions_class[i] == 1 and y_test.iloc[i]['label'] == True or predictions_class[i] == 0 and y_test.iloc[i]['label'] == False:
-            nrCorrect += 1
-        total += 1
-        confidence_result_list.append(y_test_result.iloc[i]['result'])
-        print("\n",stockTicker)
-        print("Prediction:", predictions_class[i], "Confidence level:", predictions[i], "Correct Result:", round(y_test_result.iloc[i]['result'],4),"%","Date",y_test_result.iloc[i]['index'])
-        print("Total: ",total," Correct: ",nrCorrect, " Hitrate: ",round((nrCorrect/total)*100,2))
+predictions_df = pd.DataFrame(predictions, columns=['predictions'])
+print(X)
+print(df)
+print(predictions)
 
-confidence_result_list = round(sum(confidence_result_list) / len(confidence_result_list),4)
-average = round(y_test_result['result'].mean(),4)
-print("Average profit only above confidence level (%): ",confidence_result_list)
-print("Average profit total (%): ",average)
+for i, prediction in enumerate(predictions):
+    print("Date:", df.index[i], "Prediction",predictions_class[i], "Confidence:", prediction)
 
+# Create a scatter plot
+# This will create a scatter plot with the x-axis showing the date and 
+# the y-axis showing the predictions. The points will be colored red if 
+# the prediction is greater than 0.5 and blue if the prediction is less 
+# than or equal to 0.5.
+plt.scatter(df.index, predictions, c=predictions_class, cmap='RdBu')
 
-# Evaluate the model on the test data
-score = model.evaluate(X_test, y_test, verbose=0)
-print("Accuracy: ", score[1])
-
-
-fig, ax = plt.subplots()
-# Plot training accuracy in blue
-ax.plot(history.history['accuracy'], label='Train accuracy', color='blue')
-
-# Plot validation accuracy (if available) in green
-if 'val_accuracy' in history.history:
-    ax.plot(history.history['val_accuracy'], label='Validation accuracy', color='green')
-
-# Plot training loss in red
-ax.plot(history.history['loss'], label='Train loss', color='red')
-
-# Plot validation loss (if available) in orange
-if 'val_loss' in history.history:
-    ax.plot(history.history['val_loss'], label='Validation loss', color='orange')
-
-# Add legend, x and y labels and title
-ax.legend()
-ax.set_title('Model accuracy and loss')
-ax.set_xlabel('Epoch')
-ax.set_ylabel('Accuracy/Loss')
-
+# Add labels and show the plot
+plt.title(stockTicker)
+plt.xlabel('Date')
+plt.ylabel('Prediction')
 plt.show()
-
-# Save the model to a file
-modelName = "model_LSTM_" + stockTicker + "_intervall_" + str(INTERVAL) + "_peek_" + str(future_peek) + ".joblib"
-modelName = "last_model_trained.joblib"
-dump(model, modelName)
