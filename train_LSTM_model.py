@@ -280,6 +280,7 @@ if 'val_loss' in history.history:
     ax.plot(history.history['val_loss'], label='Validation loss', color='orange')
 
 # Add legend, x and y labels and title
+plt.title(stockTicker)
 ax.legend()
 ax.set_title('Model accuracy and loss')
 ax.set_xlabel('Epoch')
